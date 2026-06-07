@@ -22,6 +22,10 @@ app.add_middleware(
 # Create OpenAI client once
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 # Root endpoint
 @app.get("/")
 def read_root():
