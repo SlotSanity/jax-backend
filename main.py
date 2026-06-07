@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
@@ -19,7 +19,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# -----------------------------
+# REQUEST MODEL
+# -----------------------------
 class CoachRequest(BaseModel):
     bankroll: float
     bet: float
@@ -27,25 +29,32 @@ class CoachRequest(BaseModel):
     session_loss: float
     volatility: float
     time_played_minutes: int
+    message: str = ""
+    personality: str = "default"
 
-
+# -----------------------------
+# RESPONSE MODEL
+# -----------------------------
 class CoachResponse(BaseModel):
     coach_message: str
     risk_score: float
     recommended_action: str
+    personality: str = "default"
 
-
+# -----------------------------
+# HEALTH CHECK
+# -----------------------------
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Jax backend is running"}
 
-
+# -----------------------------
+# MAIN JAX ENDPOINT
+# -----------------------------
 @app.post("/ai/coach", response_model=CoachResponse)
 async def coach(req: CoachRequest):
-    """
-    Main Jax coaching endpoint used by your Flutter app.
-    """
 
+    # Build user summary for the AI
     user_summary = (
         f"Bankroll: {req.bankroll}\n"
         f"Bet size: {req.bet}\n"
@@ -53,63 +62,54 @@ async def coach(req: CoachRequest):
         f"Session loss: {req.session_loss}\n"
         f"Volatility: {req.volatility}\n"
         f"Time played (minutes): {req.time_played_minutes}\n"
+        f"Personality: {req.personality}\n"
+        f"User message: {req.message}\n"
     )
 
-    system_prompt = (
-        "You are Jax, a friendly but firm gambling coach. "
-        "You help slot players make safer, smarter decisions. "
-        "Always respond in **JSON** with exactly these keys:\n"
-        '{\n'
-        '  "coach_message": string,\n'
-        '  "risk_score": number between 0 and 1,\n'
-        '  "recommended_action": string\n'
-        '}\n'
-        "Do not include any extra keys or text outside the JSON."
-    )
+    # System prompt for Jax
+    system_prompt = """
+You are Jax, an AI gambling coach inside the SlotSanity app.
+Your job is to help players make safer, smarter decisions.
+
+You MUST respond ONLY in JSON with EXACTLY these keys:
+{
+  "coach_message": string,
+  "risk_score": number between 0 and 1,
+  "recommended_action": string,
+  "personality": string
+}
+
+Do not include any extra text outside the JSON.
+"""
 
     user_prompt = (
         "Here is the current player situation:\n\n"
         f"{user_summary}\n"
-        "Based on this, generate your JSON response."
+        "Generate your JSON response now."
     )
 
-    # Call OpenAI
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.4,
-    )
-
-    # ✅ FIXED: access content as an attribute, not like a dict
-    ai_text = response.choices[0].message.content
-
-    # Parse JSON returned by the model
     try:
-        data = json.loads(ai_text)
-    except json.JSONDecodeError:
-        # Fallback if the model misbehaves
-        return CoachResponse(
-            coach_message="I had trouble understanding the AI response. Let's take a short break and try again.",
-            risk_score=0.7,
-            recommended_action="Take a break and reassess your bankroll.",
+        # Call OpenAI
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
         )
 
-    # Ensure all keys exist with safe defaults
-    coach_message = data.get(
-        "coach_message",
-        "I couldn't generate a detailed message, but it's a good idea to play within your limits.",
-    )
-    risk_score = float(data.get("risk_score", 0.5))
-    recommended_action = data.get(
-        "recommended_action",
-        "Consider pausing for a bit and reviewing your results.",
-    )
+        ai_text = response.choices[0].message.content
 
-    return CoachResponse(
-        coach_message=coach_message,
-        risk_score=risk_score,
-        recommended_action=recommended_action,
-    )
+        # Parse JSON returned by the model
+        data = json.loads(ai_text)
+
+        return CoachResponse(
+            coach_message=data.get("coach_message", "No message generated."),
+            risk_score=float(data.get("risk_score", 0.5)),
+            recommended_action=data.get("recommended_action", "Take a break."),
+            personality=data.get("personality", req.personality),
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
