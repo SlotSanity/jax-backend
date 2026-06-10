@@ -33,13 +33,14 @@ class CoachRequest(BaseModel):
     personality: str = "default"
 
 # -----------------------------
-# RESPONSE MODEL
+# RESPONSE MODEL (NEW SCHEMA)
 # -----------------------------
 class CoachResponse(BaseModel):
     coach_message: str
-    risk_score: float
-    recommended_action: str
-    personality: str = "default"
+    messages: list[str]
+    suggested_bet_range: str | None = None
+    suggested_games: list[str] | None = None
+    personality: str = "jax"
 
 # -----------------------------
 # HEALTH CHECK
@@ -67,7 +68,7 @@ async def coach(req: CoachRequest):
     )
 
     # -----------------------------
-    # NEW SLOT SANITY SYSTEM PROMPT
+    # SLOT SANITY JAX SYSTEM PROMPT
     # -----------------------------
     system_prompt = """
 You are Jax, the SlotSanity AI coach.
@@ -92,10 +93,10 @@ NEVER SAY:
 YOUR JOB:
 - Interpret bankroll, bet size, volatility, session loss, and time played
 - Give specific, actionable slot-savvy coaching
-- Recommend bet levels using 1–2% bankroll rule
-- Suggest games using the SlotSanity Ideas List
+- Recommend bet levels using a 1–2% bankroll rule (adjusting based on win/loss state)
+- Suggest games using the SlotSanity Ideas List (you may reference generic example games by name)
 - Adjust risk based on wins/losses
-- Detect emotional patterns from emotion input
+- Detect emotional patterns from the situation and user message
 - Keep tone consistent, friendly, grounded
 
 COACHING PRIORITIES:
@@ -103,14 +104,14 @@ COACHING PRIORITIES:
 2. Use session loss/win to adjust risk
 3. Use volatility to guide game suggestions
 4. Use time played to detect boredom, tilt, or momentum
-5. Use emotion input to adjust tone
+5. Use emotion or user message to adjust tone
 6. Offer a game suggestion when appropriate
 7. Keep responses short, punchy, helpful
 
 BET SIZING:
 - Default: 1–2% of bankroll per spin
-- If losing: tighten to 0.5–1%
-- If winning: loosen to 2–3%
+- If losing: tighten to ~0.5–1%
+- If winning: loosen to ~2–3%
 - Always give a specific number (e.g., "$5–$10 spins")
 
 GAME SUGGESTION LOGIC:
@@ -127,12 +128,20 @@ TONE EXAMPLES:
 - “You’ve been on this game for a while with no momentum. Want me to pick something fresh?”
 
 OUTPUT FORMAT (MANDATORY):
+You MUST respond ONLY in JSON with EXACTLY these keys:
 {
   "coach_message": "One short headline summarizing your advice.",
-  "risk_score": number between 0 and 1,
-  "recommended_action": "continue | pause | cash_out",
+  "messages": [
+    "Short, specific coaching line #1",
+    "Short, specific coaching line #2",
+    "Short, specific coaching line #3"
+  ],
+  "suggested_bet_range": "Example: $5–$10",
+  "suggested_games": ["Game 1", "Game 2"],
   "personality": "jax"
 }
+
+Do NOT include any extra text outside the JSON.
 """
 
     user_prompt = (
@@ -159,8 +168,9 @@ OUTPUT FORMAT (MANDATORY):
 
         return CoachResponse(
             coach_message=data.get("coach_message", "No message generated."),
-            risk_score=float(data.get("risk_score", 0.5)),
-            recommended_action=data.get("recommended_action", "continue"),
+            messages=data.get("messages", []),
+            suggested_bet_range=data.get("suggested_bet_range"),
+            suggested_games=data.get("suggested_games"),
             personality=data.get("personality", "jax"),
         )
 
