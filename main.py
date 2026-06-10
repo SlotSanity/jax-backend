@@ -152,7 +152,7 @@ Example (escaped so Python does not break the prompt):
     try:
         # Call OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
