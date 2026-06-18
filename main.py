@@ -32,8 +32,13 @@ class CoachRequest(BaseModel):
     message: str = ""
     personality: str = "default"
 
+    # NEW SESSION / CONTEXT FIELDS
+    session_open: bool = True
+    last_bonus_won: float | None = None
+    last_big_hit_amount: float | None = None
+
 # -----------------------------
-# RESPONSE MODEL (NEW SCHEMA)
+# RESPONSE MODEL
 # -----------------------------
 class CoachResponse(BaseModel):
     coach_message: str
@@ -65,6 +70,9 @@ async def coach(req: CoachRequest):
         f"Time played (minutes): {req.time_played_minutes}\n"
         f"Personality: {req.personality}\n"
         f"User message: {req.message}\n"
+        f"Session open: {req.session_open}\n"
+        f"Last bonus won: {req.last_bonus_won}\n"
+        f"Last big hit amount: {req.last_big_hit_amount}\n"
     )
 
     # -----------------------------
@@ -174,14 +182,29 @@ NO PREAMBLE RULE:
 OUTPUT FORMAT (MANDATORY):
 Respond ONLY in JSON with EXACTLY these keys.
 
+You must ALWAYS tailor your response based on the following session data:
+
+- sessionOpen: {true/false}
+- bankroll: {number}
+- betPerSpin: {number}
+- lastBonusWon: {number or null}
+- lastBigHitAmount: {number or null}
+
+Rules:
+1. If sessionOpen is false → ask the user if they want to start a session.
+2. If bankroll < betPerSpin * 10 → warn gently about low bankroll.
+3. If bankroll > betPerSpin * 100 → encourage strategic risk-taking.
+4. If lastBonusWon is not null → acknowledge the bonus and suggest next steps.
+5. If lastBigHitAmount is not null → acknowledge the hit and suggest pacing.
+6. NEVER tell the user to “manage bankroll responsibly.” YOU give the advice.
+7. Keep responses short, confident, and conversational.
+
 Example (escaped so Python does not break the prompt):
-{\"coach_message\":\"HI CHRIS! One short tactical headline.\",
+{\"coach_message\":\"One short tactical headline.\",
  \"messages\":[\"Line 1\",\"Line 2\",\"Line 3\"],
  \"suggested_bet_range\":\"$5–$10\",
  \"suggested_games\":[\"Game 1\",\"Game 2\"],
  \"personality\":\"jax\"}
-
-
 """
 
     user_prompt = (
