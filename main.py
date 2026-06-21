@@ -37,6 +37,15 @@ class CoachRequest(BaseModel):
     last_bonus_won: float | None = None
     last_big_hit_amount: float | None = None
 
+    # NEW SUGGESTION ENGINE FIELDS
+    suggested_games: list[dict] | None = None
+    favorite_games: list[str] | None = None
+    recent_games_played: list[str] | None = None
+    casino_name: str | None = None
+    weekday: str | None = None
+    risk_score: int | None = None
+
+
 # -----------------------------
 # RESPONSE MODEL
 # -----------------------------
@@ -47,12 +56,14 @@ class CoachResponse(BaseModel):
     suggested_games: list[str] | None = None
     personality: str = "jax"
 
+
 # -----------------------------
 # HEALTH CHECK
 # -----------------------------
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Jax backend is running"}
+
 
 # -----------------------------
 # MAIN JAX ENDPOINT
@@ -61,19 +72,25 @@ async def root():
 async def coach(req: CoachRequest):
 
     # Build user summary for the AI
-    user_summary = (
-        f"Bankroll: {req.bankroll}\n"
-        f"Bet size: {req.bet}\n"
-        f"Game: {req.game}\n"
-        f"Session loss: {req.session_loss}\n"
-        f"Volatility: {req.volatility}\n"
-        f"Time played (minutes): {req.time_played_minutes}\n"
-        f"Personality: {req.personality}\n"
-        f"User message: {req.message}\n"
-        f"Session open: {req.session_open}\n"
-        f"Last bonus won: {req.last_bonus_won}\n"
-        f"Last big hit amount: {req.last_big_hit_amount}\n"
-    )
+    user_summary = {
+        "bankroll": req.bankroll,
+        "bet": req.bet,
+        "game": req.game,
+        "session_loss": req.session_loss,
+        "volatility": req.volatility,
+        "time_played_minutes": req.time_played_minutes,
+        "message": req.message,
+        "personality": req.personality,
+        "session_open": req.session_open,
+        "last_bonus_won": req.last_bonus_won,
+        "last_big_hit_amount": req.last_big_hit_amount,
+        "suggested_games": req.suggested_games,
+        "favorite_games": req.favorite_games,
+        "recent_games_played": req.recent_games_played,
+        "casino_name": req.casino_name,
+        "weekday": req.weekday,
+        "risk_score": req.risk_score,
+    }
 
     # -----------------------------
     # SLOT SANITY JAX SYSTEM PROMPT
@@ -91,10 +108,11 @@ IDENTITY:
 - You never default to safety warnings or responsible gambling messaging.
 
 YOUR JOB:
-- Read the player’s bankroll, bet size, volatility, session loss, time played, and message.
-- Give specific, actionable slot coaching.
+- Use ONLY the data provided in the JSON payload.
+- Use bankroll, bet size, volatility, session loss, time played, casino, weekday, and suggestions.
+- Recommend ONLY games from suggested_games.
+- Never invent games.
 - Recommend a bet range tied directly to bankroll.
-- Suggest games tied to volatility and session state.
 - Adjust tone based on emotion (tilt, chasing, boredom, overconfidence, autopilot, healthy).
 - Keep everything short, sharp, and useful.
 
@@ -111,39 +129,6 @@ STRICT LANGUAGE RULES:
 - No warnings.
 - No “as an AI” statements.
 
-BANNED FALLBACK PHRASES:
-- "Feels like the spark's fading"
-- "Feels like the sparks fading"
-- "reset and recharge"
-- "switch things up"
-- "play smart"
-- "stay intentional"
-- ANY variation of these phrases.
-
-PROHIBITED PHRASES AND CONCEPTS:
-- Never tell the user to stop playing.
-- Never tell the user to take a break.
-- Never tell the user to slow down.
-- Never tell the user to be careful.
-- Never imply danger, risk, or harm.
-- Never imply the user is doing something wrong.
-- Never give responsible gambling advice.
-
-ALLOWED REPLACEMENTS FOR NEGATIVE STATES:
-- If losing: tighten bet size.
-- If bored: recommend switching games based on volatility.
-- If tilted: recommend stabilizing bets or shifting volatility.
-- If chasing: recommend returning to baseline bet range.
-- If fatigued: recommend recalibrating bet size or volatility.
-
-TONE OVERRIDE:
-- You are not a safety coach.
-- You are not a therapist.
-- You are not a responsible gambling advisor.
-- You are a slot grinder giving tactical advice.
-- You never warn. You never scold. You never protect.
-- You only coach strategy.
-
 BET SIZING RULE:
 - Default: 1–2% of bankroll.
 - If losing: tighten to ~0.5–1%.
@@ -151,6 +136,7 @@ BET SIZING RULE:
 - Always output a specific range (e.g., "$5–$10").
 
 GAME SUGGESTION LOGIC:
+- You may ONLY recommend games from suggested_games.
 - High bankroll → medium/high volatility.
 - Low bankroll → low/medium volatility.
 - Losing → stabilizing games.
@@ -165,66 +151,37 @@ TONE:
 
 PREFIX RULE (MANDATORY):
 - The value of "coach_message" MUST ALWAYS begin with the exact text: "HI CHRIS! ".
-- This prefix must appear at the very start of the coach_message string.
-- Do not add the prefix to any other field.
 
 ABSOLUTE OUTPUT RULE:
 - You MUST respond with ONLY a single JSON object.
 - You MUST NOT output any text before or after the JSON.
 - You MUST NOT explain, comment, apologize, or add any natural language.
-- The JSON MUST be the first and only thing in your response.
-
-NO PREAMBLE RULE:
-- Do NOT start with a headline, summary, or commentary.
-- Do NOT output any text outside the JSON object.
-- The JSON object MUST be the first character of the response.
 
 OUTPUT FORMAT (MANDATORY):
-Respond ONLY in JSON with EXACTLY these keys.
-
-You must ALWAYS tailor your response based on the following session data:
-
-- sessionOpen: {true/false}
-- bankroll: {number}
-- betPerSpin: {number}
-- lastBonusWon: {number or null}
-- lastBigHitAmount: {number or null}
-
-Rules:
-1. If sessionOpen is false → ask the user if they want to start a session.
-2. If bankroll < betPerSpin * 10 → warn gently about low bankroll.
-3. If bankroll > betPerSpin * 100 → encourage strategic risk-taking.
-4. If lastBonusWon is not null → acknowledge the bonus and suggest next steps.
-5. If lastBigHitAmount is not null → acknowledge the hit and suggest pacing.
-6. NEVER tell the user to “manage bankroll responsibly.” YOU give the advice.
-7. Keep responses short, confident, and conversational.
-
-Example (escaped so Python does not break the prompt):
-{\"coach_message\":\"One short tactical headline.\",
- \"messages\":[\"Line 1\",\"Line 2\",\"Line 3\"],
- \"suggested_bet_range\":\"$5–$10\",
- \"suggested_games\":[\"Game 1\",\"Game 2\"],
- \"personality\":\"jax\"}
+Respond ONLY in JSON with EXACTLY these keys:
+{
+ "coach_message": "...",
+ "messages": ["...", "..."],
+ "suggested_bet_range": "...",
+ "suggested_games": ["...", "..."],
+ "personality": "jax"
+}
 """
 
-    user_prompt = (
-        "Here is the current player situation:\n\n"
-        f"{user_summary}\n"
-        "Generate your JSON response now."
-    )
-
+    # -----------------------------
+    # CALL OPENAI RESPONSES API
+    # -----------------------------
     try:
-        # Call OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4.1",
-            messages=[
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": json.dumps(user_summary)},
             ],
             temperature=0.4,
         )
 
-        ai_text = response.choices[0].message.content
+        ai_text = response.output_text
 
         # Parse JSON returned by the model
         data = json.loads(ai_text)
