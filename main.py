@@ -251,8 +251,18 @@ You MUST NOT:
 
         ai_text = response.output_text
 
-        # Parse JSON returned by the model
-        data = json.loads(ai_text)
+        # -----------------------------
+        # FIX: Extract ONLY the JSON object
+        # -----------------------------
+        ai_text = ai_text.strip()
+        start = ai_text.find("{")
+        end = ai_text.rfind("}") + 1
+
+        if start == -1 or end == 0:
+            raise ValueError(f"AI did not return JSON. Raw output: {ai_text}")
+
+        json_str = ai_text[start:end]
+        data = json.loads(json_str)
 
         return CoachResponse(
             coach_message=data.get("coach_message", "No message generated."),
